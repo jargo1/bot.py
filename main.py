@@ -1,4 +1,3 @@
-
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
@@ -15,6 +14,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 DATA_FILE = "raha.json"
 LOAN_FILE = "laenud.json"
 
+# Kontrollime, kas vajalikud failid on olemas
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, "w") as f:
         json.dump({}, f)
@@ -23,6 +23,7 @@ if not os.path.exists(LOAN_FILE):
     with open(LOAN_FILE, "w") as f:
         json.dump({}, f)
 
+# Laadime andmed
 def load_data():
     with open(DATA_FILE, "r") as f:
         return json.load(f)
@@ -31,6 +32,7 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+# Laenude haldamine
 def load_loans():
     with open(LOAN_FILE, "r") as f:
         return json.load(f)
@@ -39,6 +41,7 @@ def save_loans(data):
     with open(LOAN_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+# Funktsioon saldodest lugemiseks
 def get_balance(user_id):
     data = load_data()
     return data.get(str(user_id), 1000)
@@ -67,6 +70,7 @@ def get_card():
     ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
     return random.choice(ranks)
 
+# Päevaboonuse kontrollimine
 def has_claimed_daily_bonus(user_id):
     bonuses = load_data()
     last_claim = bonuses.get(str(user_id), {}).get("last_claim", "1970-01-01")
@@ -84,6 +88,7 @@ def claim_daily_bonus(user_id):
     save_data(bonuses)
     set_balance(user_id, get_balance(user_id) + 100)
 
+# Laenu süsteem
 def get_loan(user_id):
     loans = load_loans()
     return loans.get(str(user_id), {"amount": 0, "interest": 0})
@@ -93,6 +98,7 @@ def set_loan(user_id, amount, interest):
     loans[str(user_id)] = {"amount": amount, "interest": interest}
     save_loans(loans)
 
+# Blackjacki klassid
 class BlackjackView(View):
     def __init__(self, ctx, player_cards, dealer_cards, bet):
         super().__init__(timeout=60)
@@ -106,6 +112,7 @@ class BlackjackView(View):
         balance = get_balance(user_id)
 
         if result == "win":
+            # 1.4x võit
             win_amount = self.bet * 1.4
             balance += win_amount
             msg = f"🎉 Sa võitsid {win_amount:.2f}€! (1.4x sinu panusest)"
@@ -148,6 +155,8 @@ class BlackjackView(View):
         else:
             await self.end_game(interaction, "draw")
 
+
+ 
 class PanuseView(View):
     def __init__(self, ctx):
         super().__init__(timeout=60)
@@ -182,6 +191,7 @@ class PanuseView(View):
             view=view
         )
 
+
 @bot.command()
 async def blackjack(ctx):
     await ctx.send("💵 Vali panus blackjacki alustamiseks:", view=PanuseView(ctx))
@@ -213,6 +223,54 @@ async def edetabel(ctx):
     leaderboard = sorted(data.items(), key=lambda x: x[1], reverse=True)
     edetabel = "\n".join([f"{i+1}. {ctx.bot.get_user(int(user_id)).name} - {balance}€" for i, (user_id, balance) in enumerate(leaderboard)])
     await ctx.send(f"🏆 **Edetabel:**\n{edetabel}")
+
+
+#laen
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def laen(ctx, kasutaja: discord.Member, amount: int):
+    user_id = str(kasutaja.id)
+    loan = get_loan(user_id)
+
+    if loan["amount"] > 0:
+        await ctx.send(f"❌ {kasutaja.display_name} juba omab laenu: {loan['amount']}€.")
+        return
+
+    set_loan(user_id, amount, 0.1)  # Intress 10%
+    set_balance(user_id, get_balance(user_id) + amount)
+    await ctx.send(f"✅ {kasutaja.display_name} sai {amount}€ laenu (intressiga 10%).")
+
+
+
+
+
+
+
+
+
+@bot.command()
+async def laen_olek(ctx):
+    user_id = str(ctx.author.id)
+    loan = get_loan(user_id)
+
+    if loan["amount"] == 0:
+        await ctx.send("❌ Sul pole laenu.")
+    else:
+        total_due = loan["amount"] * (1 + loan["interest"])
+        await ctx.send(f"📊 **Sinu laen:**\nLaenu summa: {loan['amount']}€\nIntress: {loan['interest']*100}%\nKokku tagastatav summa: {total_due}€")
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def reset_saldo(ctx, kasutaja: discord.Member = None):
+    if kasutaja is None:
+        kasutaja = ctx.author
+    user_id = str(kasutaja.id)
+    set_balance(user_id, 0)
+    await ctx.send(f"🔁 {kasutaja.display_name} saldo on nullitud (0€).")
+
 
 from keep_alive import keep_alive
 keep_alive()
