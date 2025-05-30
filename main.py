@@ -307,6 +307,44 @@ def get_leaderboard():
 
 
 
+import discord
+from discord.ext import commands
+import json
+
+bot = commands.Bot(command_prefix="!")
+
+# Laadimise funktsioon
+def load_leaderboard():
+    try:
+        with open("leaderboard.json", "r") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return {}
+
+def save_leaderboard(leaderboard):
+    with open("leaderboard.json", "w") as file:
+        json.dump(leaderboard, file, indent=4)
+
+def get_leaderboard():
+    leaderboard = load_leaderboard()
+    sorted_leaderboard = sorted(leaderboard.items(), key=lambda x: x[1], reverse=True)
+    return sorted_leaderboard
+
+@bot.command()
+async def edetabel(ctx):
+    leaderboard = get_leaderboard()  # Laadib edetabeli
+    if not leaderboard:
+        await ctx.send("🏆 **Edetabel on tühi!**")
+        return
+
+    edetabel_str = "🏆 **Edetabel:**\n"
+    # Loome edetabeli, kuvades mängija nime ja tema skoori
+    for rank, (name, score) in enumerate(leaderboard, start=1):
+        edetabel_str += f"{rank}. {name} - {score}€\n"  # Kuvab järjestusnumbrid
+
+    await ctx.send(edetabel_str)
+
+
 
 from keep_alive import keep_alive
 keep_alive()
