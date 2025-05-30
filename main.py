@@ -311,7 +311,12 @@ import discord
 from discord.ext import commands
 import json
 
-bot = commands.Bot(command_prefix="!")
+# Defineerime intents (nende kaudu määratakse, mida bot saab jälgida)
+intents = discord.Intents.default()
+intents.message_content = True  # See võimaldab sõnumite lugemist
+
+# Loome boti, lisades intents
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Laadimise funktsioon
 def load_leaderboard():
@@ -343,7 +348,6 @@ async def edetabel(ctx):
         edetabel_str += f"{rank}. {name} - {score}€\n"  # Kuvab järjestusnumbrid
 
     await ctx.send(edetabel_str)
-
 
 
 from keep_alive import keep_alive
