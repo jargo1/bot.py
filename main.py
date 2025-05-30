@@ -219,10 +219,10 @@ async def daily(ctx):
 
 @bot.command()
 async def edetabel(ctx):
-    data = load_data()
-    leaderboard = sorted(data.items(), key=lambda x: x[1], reverse=True)
-    edetabel = "\n".join([f"{i+1}. {ctx.bot.get_user(int(user_id)).name} - {balance}€" for i, (user_id, balance) in enumerate(leaderboard)])
+    leaderboard = get_leaderboard()
+    edetabel = "\n".join([f"{i+1}. {name} - {score}€" for i, (name, score) in enumerate(leaderboard)])
     await ctx.send(f"🏆 **Edetabel:**\n{edetabel}")
+
 
 
 @bot.command()
@@ -282,9 +282,6 @@ async def reset_saldo(ctx, kasutaja: discord.Member = None):
     await ctx.send(f"🔁 {kasutaja.display_name} saldo on nullitud (0€).")
 
 
-import json
-
-# Funktsioonid edetabeli haldamiseks
 def load_leaderboard():
     try:
         with open("leaderboard.json", "r") as file:
@@ -296,15 +293,17 @@ def save_leaderboard(leaderboard):
     with open("leaderboard.json", "w") as file:
         json.dump(leaderboard, file, indent=4)
 
-def update_leaderboard(player_name, score):
+def update_leaderboard(user_id, score):
     leaderboard = load_leaderboard()
-    leaderboard[player_name] = score
+    user_name = ctx.bot.get_user(int(user_id)).name  # Kogub kasutajanime
+    leaderboard[user_name] = score
     save_leaderboard(leaderboard)
 
 def get_leaderboard():
     leaderboard = load_leaderboard()
     sorted_leaderboard = sorted(leaderboard.items(), key=lambda x: x[1], reverse=True)
     return sorted_leaderboard
+
 
 
 
