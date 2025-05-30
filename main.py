@@ -216,4 +216,4 @@ async def edetabel(ctx):
 
 from keep_alive import keep_alive
 keep_alive()
-bot.run(os.getenv("MTM3NzkyMjI3Njg4MzgyNDcyMQ.GSnWTm.ha0oM0LsBp4flRxd9JNkwyDDX-tl1JgBnKqq8M"))
+bot.run(os.getenv("TOKEN"))
