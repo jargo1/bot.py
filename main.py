@@ -225,6 +225,16 @@ async def edetabel(ctx):
     await ctx.send(f"🏆 **Edetabel:**\n{edetabel}")
 
 
+@bot.command()
+async def leaderboard(ctx):
+    leaderboard = get_leaderboard()
+    edetabel_str = "Edetabel:\n"
+    for rank, (name, score) in enumerate(leaderboard, start=1):
+        edetabel_str += f"{rank}. {name} - {score}\n"
+    await ctx.send(edetabel_str)
+
+
+
 #laen
 
 
