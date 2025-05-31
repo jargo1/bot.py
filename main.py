@@ -248,9 +248,9 @@ async def laen(ctx, kasutaja: discord.Member, amount: int):
         return
 
     set_loan(user_id, amount, 0.1)  # Intress 10%
-    set_balance(user_id, get_balance(user_id) + amount)
+    current_balance = get_balance(user_id)
+    set_balance(user_id, current_balance + amount)  # Lisame laenusumma kasutaja saldo juurde
     await ctx.send(f"✅ {kasutaja.display_name} sai {amount}€ laenu (intressiga 10%).")
-
 
 
 
