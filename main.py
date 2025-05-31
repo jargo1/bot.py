@@ -2,60 +2,35 @@ import discord
 from discord.ext import commands
 from discord.ui import Button, View
 import random
-import json
 import os
 from datetime import datetime, timedelta
 from keep_alive import keep_alive
+from pymongo import MongoClient
 
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-DATA_FILE = "raha.json"
-LOAN_FILE = "laenud.json"
+# MongoDB ühendus
+MONGO_URI = "PASTA_SIINDE_SINU_CONNECTION_STRING"  # Pane siia MongoDB ühenduse string
+client = MongoClient(MONGO_URI)
+db = client["discord_bot"]
+users_col = db["users"]
+loans_col = db["loans"]
+
 ALLOWED_CHANNEL_ID = 1377701866183331850  # <- MUUDA SEE ÕIGE KANALI IDKS
 
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "w") as f:
-        json.dump({}, f)
-
-if not os.path.exists(LOAN_FILE):
-    with open(LOAN_FILE, "w") as f:
-        json.dump({}, f)
-
-def load_data():
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-def load_loans():
-    with open(LOAN_FILE, "r") as f:
-        return json.load(f)
-
-def save_loans(data):
-    with open(LOAN_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
 def get_balance(user_id):
-    data = load_data()
-    entry = data.get(str(user_id), 1000)
-    if isinstance(entry, dict):
-        return entry.get("balance", 1000)
-    return entry
+    user = users_col.find_one({"_id": str(user_id)})
+    return user.get("balance", 1000) if user else 1000
 
 def set_balance(user_id, amount):
-    data = load_data()
-    entry = data.get(str(user_id), {})
-    if isinstance(entry, dict):
-        entry["balance"] = amount
-    else:
-        entry = {"balance": amount}
-    data[str(user_id)] = entry
-    save_data(data)
+    users_col.update_one(
+        {"_id": str(user_id)},
+        {"$set": {"balance": amount}},
+        upsert=True
+    )
 
 def get_value(cards):
     value, aces = 0, 0
@@ -77,43 +52,43 @@ def get_card():
     return random.choice(ranks)
 
 def has_claimed_daily_bonus(user_id):
-    data = load_data()
-    entry = data.get(str(user_id), {})
-    last_claim = entry.get("last_claim", "1970-01-01")
-    last_claim_date = datetime.strptime(last_claim, "%Y-%m-%d")
-    return (datetime.now() - last_claim_date) < timedelta(days=1)
+    user = users_col.find_one({"_id": str(user_id)})
+    if not user or "last_claim" not in user:
+        return False
+    last_claim = datetime.strptime(user["last_claim"], "%Y-%m-%d")
+    return (datetime.now() - last_claim) < timedelta(days=1)
 
 def claim_daily_bonus(user_id):
-    data = load_data()
-    entry = data.get(str(user_id), {})
-    entry["last_claim"] = datetime.now().strftime("%Y-%m-%d")
-    entry["balance"] = get_balance(user_id) + 100
-    data[str(user_id)] = entry
-    save_data(data)
+    balance = get_balance(user_id) + 100
+    users_col.update_one(
+        {"_id": str(user_id)},
+        {
+            "$set": {
+                "balance": balance,
+                "last_claim": datetime.now().strftime("%Y-%m-%d")
+            }
+        },
+        upsert=True
+    )
 
 def get_loan(user_id):
-    loans = load_loans()
-    return loans.get(str(user_id), {"amount": 0, "interest": 0})
+    loan = loans_col.find_one({"_id": str(user_id)})
+    return loan if loan else {"amount": 0, "interest": 0}
 
 def set_loan(user_id, amount, interest):
-    loans = load_loans()
-    loans[str(user_id)] = {"amount": amount, "interest": interest}
-    save_loans(loans)
+    loans_col.update_one(
+        {"_id": str(user_id)},
+        {"$set": {"amount": amount, "interest": interest}},
+        upsert=True
+    )
 
 def get_leaderboard():
-    data = load_data()
-    scores = []
-    for user_id, info in data.items():
-        balance = info["balance"] if isinstance(info, dict) else info
-        scores.append((user_id, balance))
-    scores.sort(key=lambda x: x[1], reverse=True)
-    top_scores = scores[:10]
-
+    top_users = users_col.find().sort("balance", -1).limit(10)
     leaderboard = []
-    for user_id, balance in top_scores:
-        user = bot.get_user(int(user_id))
-        name = user.name if user else f"ID: {user_id}"
-        leaderboard.append((name, balance))
+    for user in top_users:
+        user_obj = bot.get_user(int(user["_id"]))
+        name = user_obj.name if user_obj else f"ID: {user['_id']}"
+        leaderboard.append((name, user.get("balance", 0)))
     return leaderboard
 
 class BlackjackView(View):
@@ -260,16 +235,8 @@ async def laen_olek(ctx):
         await ctx.send("❌ Sul pole laenu.")
     else:
         total_due = loan["amount"] * (1 + loan["interest"])
-        await ctx.send(f"📊 **Sinu laen:**\nLaenu summa: {loan['amount']}€\nIntress: {loan['interest']*100}%\nKokku tagastatav summa: {total_due}€")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def reset_saldo(ctx, kasutaja: discord.Member = None):
-    if kasutaja is None:
-        kasutaja = ctx.author
-    user_id = str(kasutaja.id)
-    set_balance(user_id, 0)
-    await ctx.send(f"🔁 {kasutaja.display_name} saldo on nullitud (0€).")
+        await ctx.send(f"📊 **Sinu laen:**\nLaenu summa: {loan['amount']}€\nIntress: {loan['interest']*100}%\nKohustuslik tasumine: {total_due:.2f}€")
 
 keep_alive()
-bot.run(os.getenv("TOKEN"))
+bot.run("mongodb+srv://bot:<kammerihull1A>@bot.pcrx3yf.mongodb.net/?retryWrites=true&w=majority&appName=bot")
+
