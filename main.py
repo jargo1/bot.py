@@ -115,27 +115,26 @@ class BlackjackView(View):
         self.dealer_cards = dealer_cards
         self.bet = bet
 
-   async def end_game(self, interaction, result):
-    user_id = str(interaction.user.id)
-    balance = get_balance(user_id)  # Saldo lugemine
+   async def start_game(self, interaction, panus):
+        user_id = str(interaction.user.id)
+        raha = get_balance(user_id)
 
-    if result == "win":
-        win_amount = self.bet * 1.4
-        balance += win_amount
-        msg = f"🎉 Sa võitsid {win_amount:.2f}€! (1.4x sinu panusest)"
-    elif result == "lose":
-        balance -= self.bet  # Vähenda saldo ainult kaotuse korral
-        msg = f"💀 Kaotasid {self.bet}€."
-    else:
-        msg = "🤝 Viik, raha jäi samaks."
+        if panus > raha:
+            await interaction.response.send_message(f"💸 Sul pole piisavalt raha! Jääk: {raha}€", ephemeral=True)
+            return
 
-    set_balance(user_id, balance)  # Saldo määramine lõpptulemusest sõltuvalt
+        # VÕTA RAHA KOHE MAHA enne mängu algust (mängu lõpus ei tohiks seda teha uuesti)
+        set_balance(user_id, raha - panus)
 
-    await interaction.response.edit_message(
-        content=f"{msg}\n\n**Sinu kaardid:** {', '.join(self.player_cards)} ({get_value(self.player_cards)})\n**Diileri kaardid:** {', '.join(self.dealer_cards)} ({get_value(self.dealer_cards)})\n💰 Jääk: {balance}€",
-        view=None
-    )
+        player_cards = [get_card(), get_card()]
+        dealer_cards = [get_card(), get_card()]
+        val = get_value(player_cards)
 
+        view = BlackjackView(self.ctx, player_cards, dealer_cards, panus)
+        await interaction.response.edit_message(
+            content=f"🎰 **Blackjack algas!**\n\n**Sinu kaardid:** {', '.join(player_cards)} ({val})\n**Diileri kaart:** {dealer_cards[0]}\nVali oma käik:",
+            view=view
+        )
     @discord.ui.button(label="Hit", style=discord.ButtonStyle.primary)
     async def hit(self, interaction: discord.Interaction, button: Button):
         self.player_cards.append(get_card())
