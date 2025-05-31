@@ -237,6 +237,15 @@ async def laen_olek(ctx):
         total_due = loan["amount"] * (1 + loan["interest"])
         await ctx.send(f"📊 **Sinu laen:**\nLaenu summa: {loan['amount']}€\nIntress: {loan['interest']*100}%\nKohustuslik tasumine: {total_due:.2f}€")
 
-keep_alive()
-bot.run("DISCORD_TOKEN")
+import os
+import discord
+
+intents = discord.Intents.default()
+bot = discord.Client(intents=intents)
+
+@bot.event
+async def on_ready():
+    print(f'Logged in as {bot.user}')
+
+bot.run(os.getenv("DISCORD_TOKEN"))
 
