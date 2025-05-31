@@ -115,26 +115,28 @@ class BlackjackView(View):
         self.dealer_cards = dealer_cards
         self.bet = bet
 
-    async def end_game(self, interaction, result):
-        user_id = str(interaction.user.id)
-        balance = get_balance(user_id)
+   async def end_game(self, interaction, result):
+    user_id = str(interaction.user.id)
+    balance = get_balance(user_id)
 
-        if result == "win":
-            # 1.4x võit
-            win_amount = self.bet * 1.4
-            balance += win_amount
-            msg = f"🎉 Sa võitsid {win_amount:.2f}€! (1.4x sinu panusest)"
-        elif result == "lose":
-            balance -= self.bet
-            msg = f"💀 Kaotasid {self.bet}€."
-        else:
-            msg = "🤝 Viik, raha jäi samaks."
+    if result == "win":
+        win_amount = self.bet * 1.4
+        balance += win_amount
+        msg = f"🎉 Sa võitsid {win_amount:.2f}€! (1.4x sinu panusest)"
+    elif result == "lose":
+        balance -= self.bet
+        msg = f"💀 Kaotasid {self.bet}€."
+    else:  # Kui on viik
+        msg = "🤝 Viik, raha jäi samaks."
 
-        set_balance(user_id, balance)
-        await interaction.response.edit_message(
-            content=f"{msg}\n\n**Sinu kaardid:** {', '.join(self.player_cards)} ({get_value(self.player_cards)})\n**Diileri kaardid:** {', '.join(self.dealer_cards)} ({get_value(self.dealer_cards)})\n💰 Jääk: {balance}€",
-            view=None
-        )
+    # Saldo määramine lõpptulemusest sõltuvalt
+    set_balance(user_id, balance)  # Viigi puhul ei tohiks saldo muutuda
+
+    # Kuvamine lõpptulemusega
+    await interaction.response.edit_message(
+        content=f"{msg}\n\n**Sinu kaardid:** {', '.join(self.player_cards)} ({get_value(self.player_cards)})\n**Diileri kaardid:** {', '.join(self.dealer_cards)} ({get_value(self.dealer_cards)})\n💰 Jääk: {balance}€",
+        view=None
+    )
 
     @discord.ui.button(label="Hit", style=discord.ButtonStyle.primary)
     async def hit(self, interaction: discord.Interaction, button: Button):
