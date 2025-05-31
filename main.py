@@ -238,5 +238,5 @@ async def laen_olek(ctx):
         await ctx.send(f"📊 **Sinu laen:**\nLaenu summa: {loan['amount']}€\nIntress: {loan['interest']*100}%\nKohustuslik tasumine: {total_due:.2f}€")
 
 keep_alive()
-bot.run("mongodb+srv://bot:<kammerihull1A>@bot.pcrx3yf.mongodb.net/?retryWrites=true&w=majority&appName=bot")
+bot.run("DISCORD_TOKEN")
 
