@@ -13,8 +13,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 DATA_FILE = "raha.json"
 LOAN_FILE = "laenud.json"
+# ALLOWED_CHANNEL_ID = 1234567890  # ← Kui soovid lukustada kindlasse kanalisse
 
-# Kontrollime, kas vajalikud failid on olemas
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, "w") as f:
         json.dump({}, f)
@@ -23,7 +23,6 @@ if not os.path.exists(LOAN_FILE):
     with open(LOAN_FILE, "w") as f:
         json.dump({}, f)
 
-# Laadime andmed
 def load_data():
     with open(DATA_FILE, "r") as f:
         return json.load(f)
@@ -32,7 +31,6 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# Laenude haldamine
 def load_loans():
     with open(LOAN_FILE, "r") as f:
         return json.load(f)
@@ -41,22 +39,17 @@ def save_loans(data):
     with open(LOAN_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# Funktsioon saldodest lugemiseks
 def get_balance(user_id):
     data = load_data()
-    entry = data.get(str(user_id), 1000)
-    if isinstance(entry, dict):  # kui kasutaja andmed on dict
+    entry = data.get(str(user_id), {"balance": 1000})
+    if isinstance(entry, dict):
         return entry.get("balance", 1000)
     return entry
-
 
 def set_balance(user_id, amount):
     data = load_data()
     entry = data.get(str(user_id), {})
-    if isinstance(entry, dict):
-        entry["balance"] = amount
-    else:
-        entry = {"balance": amount}
+    entry["balance"] = amount
     data[str(user_id)] = entry
     save_data(data)
 
@@ -79,7 +72,6 @@ def get_card():
     ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
     return random.choice(ranks)
 
-# Päevaboonuse kontrollimine
 def has_claimed_daily_bonus(user_id):
     data = load_data()
     entry = data.get(str(user_id), {})
@@ -95,8 +87,6 @@ def claim_daily_bonus(user_id):
     data[str(user_id)] = entry
     save_data(data)
 
-
-# Laenu süsteem
 def get_loan(user_id):
     loans = load_loans()
     return loans.get(str(user_id), {"amount": 0, "interest": 0})
@@ -106,7 +96,15 @@ def set_loan(user_id, amount, interest):
     loans[str(user_id)] = {"amount": amount, "interest": interest}
     save_loans(loans)
 
-# Blackjacki klassid
+def get_leaderboard():
+    data = load_data()
+    leaderboard = []
+    for user_id, info in data.items():
+        balance = info.get("balance", 0) if isinstance(info, dict) else info
+        leaderboard.append((user_id, balance))
+    leaderboard.sort(key=lambda x: x[1], reverse=True)
+    return leaderboard
+
 class BlackjackView(View):
     def __init__(self, ctx, player_cards, dealer_cards, bet):
         super().__init__(timeout=60)
@@ -115,26 +113,6 @@ class BlackjackView(View):
         self.dealer_cards = dealer_cards
         self.bet = bet
 
-   async def start_game(self, interaction, panus):
-        user_id = str(interaction.user.id)
-        raha = get_balance(user_id)
-
-        if panus > raha:
-            await interaction.response.send_message(f"💸 Sul pole piisavalt raha! Jääk: {raha}€", ephemeral=True)
-            return
-
-        # VÕTA RAHA KOHE MAHA enne mängu algust (mängu lõpus ei tohiks seda teha uuesti)
-        set_balance(user_id, raha - panus)
-
-        player_cards = [get_card(), get_card()]
-        dealer_cards = [get_card(), get_card()]
-        val = get_value(player_cards)
-
-        view = BlackjackView(self.ctx, player_cards, dealer_cards, panus)
-        await interaction.response.edit_message(
-            content=f"🎰 **Blackjack algas!**\n\n**Sinu kaardid:** {', '.join(player_cards)} ({val})\n**Diileri kaart:** {dealer_cards[0]}\nVali oma käik:",
-            view=view
-        )
     @discord.ui.button(label="Hit", style=discord.ButtonStyle.primary)
     async def hit(self, interaction: discord.Interaction, button: Button):
         self.player_cards.append(get_card())
@@ -162,49 +140,68 @@ class BlackjackView(View):
         else:
             await self.end_game(interaction, "draw")
 
+    async def end_game(self, interaction, result):
+        user_id = str(interaction.user.id)
+        balance = get_balance(user_id)
 
- 
+        if result == "win":
+            winnings = self.bet * 2
+            set_balance(user_id, balance + winnings)
+            msg = f"🎉 Võitsid! Sinu võit: {winnings}€"
+        elif result == "draw":
+            set_balance(user_id, balance + self.bet)
+            msg = f"🤝 Viik! Panus tagastati: {self.bet}€"
+        else:
+            msg = f"😞 Kaotasid! Panus: {self.bet}€"
+
+        await interaction.response.edit_message(
+            content=f"{msg}\n\n**Sinu kaardid:** {', '.join(self.player_cards)} ({get_value(self.player_cards)})\n"
+                    f"**Diileri kaardid:** {', '.join(self.dealer_cards)} ({get_value(self.dealer_cards)})",
+            view=None
+        )
+
 class PanuseView(View):
     def __init__(self, ctx):
         super().__init__(timeout=60)
         self.ctx = ctx
 
     @discord.ui.button(label="100€", style=discord.ButtonStyle.secondary)
-    async def bet10(self, interaction: discord.Interaction, button: Button):
+    async def bet100(self, interaction: discord.Interaction, button: Button):
         await self.start_game(interaction, 100)
 
     @discord.ui.button(label="250€", style=discord.ButtonStyle.secondary)
-    async def bet50(self, interaction: discord.Interaction, button: Button):
+    async def bet250(self, interaction: discord.Interaction, button: Button):
         await self.start_game(interaction, 250)
 
     @discord.ui.button(label="500€", style=discord.ButtonStyle.secondary)
-    async def bet100(self, interaction: discord.Interaction, button: Button):
+    async def bet500(self, interaction: discord.Interaction, button: Button):
         await self.start_game(interaction, 500)
 
     async def start_game(self, interaction, panus):
-    user_id = str(interaction.user.id)
-    raha = get_balance(user_id)
+        user_id = str(interaction.user.id)
+        raha = get_balance(user_id)
 
-    if panus > raha:
-        await interaction.response.send_message(f"💸 Sul pole piisavalt raha! Jääk: {raha}€", ephemeral=True)
-        return
+        if panus > raha:
+            await interaction.response.send_message(f"💸 Sul pole piisavalt raha! Jääk: {raha}€", ephemeral=True)
+            return
 
-    # VÕTA RAHA KOHE MAHA enne mängu algust (mängu lõpus ei tohiks seda teha uuesti)
-    set_balance(user_id, raha - panus)
+        set_balance(user_id, raha - panus)
+        player_cards = [get_card(), get_card()]
+        dealer_cards = [get_card(), get_card()]
+        val = get_value(player_cards)
 
-    player_cards = [get_card(), get_card()]
-    dealer_cards = [get_card(), get_card()]
-    val = get_value(player_cards)
-
-    view = BlackjackView(self.ctx, player_cards, dealer_cards, panus)
-    await interaction.response.edit_message(
-        content=f"🎰 **Blackjack algas!**\n\n**Sinu kaardid:** {', '.join(player_cards)} ({val})\n**Diileri kaart:** {dealer_cards[0]}\nVali oma käik:",
-        view=view
-    )
-
+        view = BlackjackView(self.ctx, player_cards, dealer_cards, panus)
+        await interaction.response.edit_message(
+            content=f"🎰 **Blackjack algas!**\n\n**Sinu kaardid:** {', '.join(player_cards)} ({val})\n"
+                    f"**Diileri kaart:** {dealer_cards[0]}\nVali oma käik:",
+            view=view
+        )
 
 @bot.command()
 async def blackjack(ctx):
+    # if ctx.channel.id != ALLOWED_CHANNEL_ID:
+    #     await ctx.send("❌ Seda käsku saab kasutada ainult kindlas kanalis.")
+    #     return
     await ctx.send("💵 Vali panus blackjacki alustamiseks:", view=PanuseView(ctx))
 
 @bot.command()
@@ -231,33 +228,22 @@ async def daily(ctx):
 @bot.command()
 async def edetabel(ctx):
     leaderboard = get_leaderboard()
-    edetabel = "\n".join([f"{i+1}. {name} - {score}€" for i, (name, score) in enumerate(leaderboard)])
+    edetabel = "\n".join([f"{i+1}. <@{uid}> - {saldo}€" for i, (uid, saldo) in enumerate(leaderboard[:10])])
     await ctx.send(f"🏆 **Edetabel:**\n{edetabel}")
-
-#laen
-
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def laen(ctx, kasutaja: discord.Member, amount: int):
     user_id = str(kasutaja.id)
     loan = get_loan(user_id)
-
     if loan["amount"] > 0:
         await ctx.send(f"❌ {kasutaja.display_name} juba omab laenu: {loan['amount']}€.")
         return
 
-    set_loan(user_id, amount, 0.1)  # Intress 10%
+    set_loan(user_id, amount, 0.1)
     current_balance = get_balance(user_id)
-    set_balance(user_id, current_balance + amount)  # Lisame laenusumma kasutaja saldo juurde
+    set_balance(user_id, current_balance + amount)
     await ctx.send(f"✅ {kasutaja.display_name} sai {amount}€ laenu (intressiga 10%).")
-
-
-
-
-
-
-
 
 @bot.command()
 async def laen_olek(ctx):
@@ -268,8 +254,9 @@ async def laen_olek(ctx):
         await ctx.send("❌ Sul pole laenu.")
     else:
         total_due = loan["amount"] * (1 + loan["interest"])
-        await ctx.send(f"📊 **Sinu laen:**\nLaenu summa: {loan['amount']}€\nIntress: {loan['interest']*100}%\nKokku tagastatav summa: {total_due}€")
-
+        await ctx.send(
+            f"📊 **Sinu laen:**\nLaenu summa: {loan['amount']}€\nIntress: {loan['interest']*100}%\nKokku tagastatav: {total_due}€"
+        )
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -279,7 +266,6 @@ async def reset_saldo(ctx, kasutaja: discord.Member = None):
     user_id = str(kasutaja.id)
     set_balance(user_id, 0)
     await ctx.send(f"🔁 {kasutaja.display_name} saldo on nullitud (0€).")
-
 
 from keep_alive import keep_alive
 keep_alive()
