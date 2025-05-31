@@ -185,23 +185,25 @@ class PanuseView(View):
         await self.start_game(interaction, 500)
 
     async def start_game(self, interaction, panus):
-        user_id = str(interaction.user.id)
-        raha = get_balance(user_id)
-        if panus > raha:
-            await interaction.response.send_message(f"💸 Sul pole piisavalt raha! Jääk: {raha}€", ephemeral=True)
-            return
+    user_id = str(interaction.user.id)
+    raha = get_balance(user_id)
 
-        set_balance(user_id, raha - panus)  # VÕTA RAHA KOHE MAHA
+    if panus > raha:
+        await interaction.response.send_message(f"💸 Sul pole piisavalt raha! Jääk: {raha}€", ephemeral=True)
+        return
 
-        player_cards = [get_card(), get_card()]
-        dealer_cards = [get_card(), get_card()]
-        val = get_value(player_cards)
+    # VÕTA RAHA KOHE MAHA enne mängu algust (mängu lõpus ei tohiks seda teha uuesti)
+    set_balance(user_id, raha - panus)
 
-        view = BlackjackView(self.ctx, player_cards, dealer_cards, panus)
-        await interaction.response.edit_message(
-            content=f"🎰 **Blackjack algas!**\n\n**Sinu kaardid:** {', '.join(player_cards)} ({val})\n**Diileri kaart:** {dealer_cards[0]}\nVali oma käik:",
-            view=view
-        )
+    player_cards = [get_card(), get_card()]
+    dealer_cards = [get_card(), get_card()]
+    val = get_value(player_cards)
+
+    view = BlackjackView(self.ctx, player_cards, dealer_cards, panus)
+    await interaction.response.edit_message(
+        content=f"🎰 **Blackjack algas!**\n\n**Sinu kaardid:** {', '.join(player_cards)} ({val})\n**Diileri kaart:** {dealer_cards[0]}\nVali oma käik:",
+        view=view
+    )
 
 
 @bot.command()
