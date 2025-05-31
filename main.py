@@ -117,22 +117,20 @@ class BlackjackView(View):
 
    async def end_game(self, interaction, result):
     user_id = str(interaction.user.id)
-    balance = get_balance(user_id)
+    balance = get_balance(user_id)  # Saldo lugemine
 
     if result == "win":
         win_amount = self.bet * 1.4
         balance += win_amount
         msg = f"🎉 Sa võitsid {win_amount:.2f}€! (1.4x sinu panusest)"
     elif result == "lose":
-        balance -= self.bet
+        balance -= self.bet  # Vähenda saldo ainult kaotuse korral
         msg = f"💀 Kaotasid {self.bet}€."
-    else:  # Kui on viik
+    else:
         msg = "🤝 Viik, raha jäi samaks."
 
-    # Saldo määramine lõpptulemusest sõltuvalt
-    set_balance(user_id, balance)  # Viigi puhul ei tohiks saldo muutuda
+    set_balance(user_id, balance)  # Saldo määramine lõpptulemusest sõltuvalt
 
-    # Kuvamine lõpptulemusega
     await interaction.response.edit_message(
         content=f"{msg}\n\n**Sinu kaardid:** {', '.join(self.player_cards)} ({get_value(self.player_cards)})\n**Diileri kaardid:** {', '.join(self.dealer_cards)} ({get_value(self.dealer_cards)})\n💰 Jääk: {balance}€",
         view=None
