@@ -13,7 +13,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 DATA_FILE = "raha.json"
 LOAN_FILE = "laenud.json"
-XP_FILE = "xp.json"  # Fail XP ja taseme salvestamiseks
+# ALLOWED_CHANNEL_ID = 1234567890  # ← Kui soovid lukustada kindlasse kanalisse
 
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, "w") as f:
@@ -21,10 +21,6 @@ if not os.path.exists(DATA_FILE):
 
 if not os.path.exists(LOAN_FILE):
     with open(LOAN_FILE, "w") as f:
-        json.dump({}, f)
-
-if not os.path.exists(XP_FILE):
-    with open(XP_FILE, "w") as f:
         json.dump({}, f)
 
 def load_data():
@@ -41,14 +37,6 @@ def load_loans():
 
 def save_loans(data):
     with open(LOAN_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-def load_xp():
-    with open(XP_FILE, "r") as f:
-        return json.load(f)
-
-def save_xp(data):
-    with open(XP_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
 def get_balance(user_id):
@@ -117,33 +105,6 @@ def get_leaderboard():
     leaderboard.sort(key=lambda x: x[1], reverse=True)
     return leaderboard
 
-# XP ja taseme süsteem
-def get_xp(user_id):
-    xp_data = load_xp()
-    return xp_data.get(str(user_id), {"xp": 0, "level": 1})
-
-def add_xp(user_id, xp_gain):
-    xp_data = load_xp()
-    current_xp = xp_data.get(str(user_id), {"xp": 0, "level": 1})
-    current_xp["xp"] += xp_gain
-
-    # Kontrolli taseme tõusu
-    level = current_xp["level"]
-    xp_needed = level * 100  # Künnis iga taseme jaoks
-    if current_xp["xp"] >= xp_needed:
-        level += 1
-        current_xp["level"] = level
-        current_xp["xp"] = 0  # Taseme ülesanne: XP reset
-
-    xp_data[str(user_id)] = current_xp
-    save_xp(xp_data)
-
-def format_xp(user_id):
-    xp_data = load_xp()
-    user_xp = xp_data.get(str(user_id), {"xp": 0, "level": 1})
-    return f"Level: {user_xp['level']} - XP: {user_xp['xp']}/100"
-
-# Blackjack mängu käik
 class BlackjackView(View):
     def __init__(self, ctx, player_cards, dealer_cards, bet):
         super().__init__(timeout=60)
@@ -186,8 +147,7 @@ class BlackjackView(View):
         if result == "win":
             winnings = self.bet * 2
             set_balance(user_id, balance + winnings)
-            add_xp(user_id, 5)  # XP lisamine
-            msg = f"🎉 Võitsid! Sinu võit: {winnings}€ (XP +5)"
+            msg = f"🎉 Võitsid! Sinu võit: {winnings}€"
         elif result == "draw":
             set_balance(user_id, balance + self.bet)
             msg = f"🤝 Viik! Panus tagastati: {self.bet}€"
@@ -239,13 +199,15 @@ class PanuseView(View):
 
 @bot.command()
 async def blackjack(ctx):
+    # if ctx.channel.id != ALLOWED_CHANNEL_ID:
+    #     await ctx.send("❌ Seda käsku saab kasutada ainult kindlas kanalis.")
+    #     return
     await ctx.send("💵 Vali panus blackjacki alustamiseks:", view=PanuseView(ctx))
 
 @bot.command()
 async def saldo(ctx):
     raha = get_balance(str(ctx.author.id))
-    xp_info = format_xp(ctx.author.id)
-    await ctx.send(f"💰 Sinu kontojääk on {raha}€\n{xp_info}")
+    await ctx.send(f"💰 Sinu kontojääk on {raha}€")
 
 @bot.command()
 async def lisa(ctx, summa: int):
@@ -269,5 +231,42 @@ async def edetabel(ctx):
     edetabel = "\n".join([f"{i+1}. <@{uid}> - {saldo}€" for i, (uid, saldo) in enumerate(leaderboard[:10])])
     await ctx.send(f"🏆 **Edetabel:**\n{edetabel}")
 
-bot.run(os.getenv("TOKEN"))
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def laen(ctx, kasutaja: discord.Member, amount: int):
+    user_id = str(kasutaja.id)
+    loan = get_loan(user_id)
+    if loan["amount"] > 0:
+        await ctx.send(f"❌ {kasutaja.display_name} juba omab laenu: {loan['amount']}€.")
+        return
 
+    set_loan(user_id, amount, 0.1)
+    current_balance = get_balance(user_id)
+    set_balance(user_id, current_balance + amount)
+    await ctx.send(f"✅ {kasutaja.display_name} sai {amount}€ laenu (intressiga 10%).")
+
+@bot.command()
+async def laen_olek(ctx):
+    user_id = str(ctx.author.id)
+    loan = get_loan(user_id)
+
+    if loan["amount"] == 0:
+        await ctx.send("❌ Sul pole laenu.")
+    else:
+        total_due = loan["amount"] * (1 + loan["interest"])
+        await ctx.send(
+            f"📊 **Sinu laen:**\nLaenu summa: {loan['amount']}€\nIntress: {loan['interest']*100}%\nKokku tagastatav: {total_due}€"
+        )
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def reset_saldo(ctx, kasutaja: discord.Member = None):
+    if kasutaja is None:
+        kasutaja = ctx.author
+    user_id = str(kasutaja.id)
+    set_balance(user_id, 0)
+    await ctx.send(f"🔁 {kasutaja.display_name} saldo on nullitud (0€).")
+
+from keep_alive import keep_alive
+keep_alive()
+bot.run(os.getenv("TOKEN"))
