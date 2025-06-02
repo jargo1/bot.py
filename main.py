@@ -220,6 +220,8 @@ async def reset_saldo(ctx, kasutaja: discord.Member = None):
     await ctx.send(f"🔁 {kasutaja.display_name} saldo on nullitud (0€).")
 
 
+from decimal import Decimal
+
 @bot.command()
 async def maksa_tagasi(ctx, summa: float):
     user_id = str(ctx.author.id)
@@ -230,12 +232,15 @@ async def maksa_tagasi(ctx, summa: float):
         await ctx.send("❌ Sul ei ole aktiivset laenu.")
         return
 
+    # Teisenda summa Decimal-iks
+    summa = Decimal(str(summa))
+
     if summa > saldo:
         await ctx.send(f"❌ Sul ei ole piisavalt raha. Sinu jääk: {saldo}€")
         return
 
     if summa > laen["amount"]:
-        summa = laen["amount"]  # ei saa rohkem maksta kui on võlgu
+        summa = laen["amount"]
 
     uus_saldo = saldo - summa
     uus_laen = laen["amount"] - summa
@@ -243,7 +248,6 @@ async def maksa_tagasi(ctx, summa: float):
     set_balance(user_id, uus_saldo)
     set_loan(user_id, uus_laen, laen["interest"])
 
-    # Salvesta makse repayment-tabelisse
     cursor.execute(
         "INSERT INTO loan_repayments (user_id, amount_paid, repayment_date) VALUES (%s, %s, NOW())",
         (user_id, summa)
