@@ -2,57 +2,52 @@ import discord
 from discord.ext import commands
 from discord.ui import Button, View
 import random
-import json
-import os
+import mysql.connector
 from datetime import datetime, timedelta
+import os
 
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-DATA_FILE = "raha.json"
-LOAN_FILE = "laenud.json"
-# ALLOWED_CHANNEL_ID = 1234567890  # ← Kui soovid lukustada kindlasse kanalisse
+# MySQL andmebaasi ühendus
+db = mysql.connector.connect(
+    host="sql7.freesqldatabase.com", 
+    user="sql7782601", 
+    password="your_password", 
+    database="sql7782601"
+)
+cursor = db.cursor()
 
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "w") as f:
-        json.dump({}, f)
-
-if not os.path.exists(LOAN_FILE):
-    with open(LOAN_FILE, "w") as f:
-        json.dump({}, f)
-
-def load_data():
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-def load_loans():
-    with open(LOAN_FILE, "r") as f:
-        return json.load(f)
-
-def save_loans(data):
-    with open(LOAN_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
+# Andmebaasi abifunktsioonid
 def get_balance(user_id):
-    data = load_data()
-    entry = data.get(str(user_id), {"balance": 1000})
-    if isinstance(entry, dict):
-        return entry.get("balance", 1000)
-    return entry
+    cursor.execute("SELECT balance FROM users WHERE user_id = %s", (user_id,))
+    result = cursor.fetchone()
+    if result:
+        return result[0]
+    return 1000  # Algsaldo
 
 def set_balance(user_id, amount):
-    data = load_data()
-    entry = data.get(str(user_id), {})
-    entry["balance"] = amount
-    data[str(user_id)] = entry
-    save_data(data)
+    cursor.execute("INSERT INTO users (user_id, balance) VALUES (%s, %s) ON DUPLICATE KEY UPDATE balance = %s", (user_id, amount, amount))
+    db.commit()
 
+def get_loan(user_id):
+    cursor.execute("SELECT amount, interest FROM loans WHERE user_id = %s", (user_id,))
+    result = cursor.fetchone()
+    if result:
+        return {"amount": result[0], "interest": result[1]}
+    return {"amount": 0, "interest": 0}
+
+def set_loan(user_id, amount, interest):
+    cursor.execute("INSERT INTO loans (user_id, amount, interest) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE amount = %s, interest = %s", (user_id, amount, interest, amount, interest))
+    db.commit()
+
+def get_leaderboard():
+    cursor.execute("SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT 10")
+    return cursor.fetchall()
+
+# Blackjacki abifunktsioonid
 def get_value(cards):
     value, aces = 0, 0
     for card in cards:
@@ -71,39 +66,6 @@ def get_value(cards):
 def get_card():
     ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
     return random.choice(ranks)
-
-def has_claimed_daily_bonus(user_id):
-    data = load_data()
-    entry = data.get(str(user_id), {})
-    last_claim = entry.get("last_claim", "1970-01-01")
-    last_claim_date = datetime.strptime(last_claim, "%Y-%m-%d")
-    return (datetime.now() - last_claim_date) < timedelta(days=1)
-
-def claim_daily_bonus(user_id):
-    data = load_data()
-    entry = data.get(str(user_id), {})
-    entry["last_claim"] = datetime.now().strftime("%Y-%m-%d")
-    entry["balance"] = get_balance(user_id) + 100
-    data[str(user_id)] = entry
-    save_data(data)
-
-def get_loan(user_id):
-    loans = load_loans()
-    return loans.get(str(user_id), {"amount": 0, "interest": 0})
-
-def set_loan(user_id, amount, interest):
-    loans = load_loans()
-    loans[str(user_id)] = {"amount": amount, "interest": interest}
-    save_loans(loans)
-
-def get_leaderboard():
-    data = load_data()
-    leaderboard = []
-    for user_id, info in data.items():
-        balance = info.get("balance", 0) if isinstance(info, dict) else info
-        leaderboard.append((user_id, balance))
-    leaderboard.sort(key=lambda x: x[1], reverse=True)
-    return leaderboard
 
 class BlackjackView(View):
     def __init__(self, ctx, player_cards, dealer_cards, bet):
@@ -199,9 +161,6 @@ class PanuseView(View):
 
 @bot.command()
 async def blackjack(ctx):
-    # if ctx.channel.id != ALLOWED_CHANNEL_ID:
-    #     await ctx.send("❌ Seda käsku saab kasutada ainult kindlas kanalis.")
-    #     return
     await ctx.send("💵 Vali panus blackjacki alustamiseks:", view=PanuseView(ctx))
 
 @bot.command()
@@ -217,33 +176,10 @@ async def lisa(ctx, summa: int):
     await ctx.send(f"✅ Sinu kontole lisati {summa}€. Uus jääk: {raha}€")
 
 @bot.command()
-async def daily(ctx):
-    user_id = str(ctx.author.id)
-    if has_claimed_daily_bonus(user_id):
-        await ctx.send("❌ Sa oled juba täna boonuse saanud!")
-    else:
-        claim_daily_bonus(user_id)
-        await ctx.send("✅ Sa said oma päevaboonuse: 100€")
-
-@bot.command()
 async def edetabel(ctx):
     leaderboard = get_leaderboard()
-    edetabel = "\n".join([f"{i+1}. <@{uid}> - {saldo}€" for i, (uid, saldo) in enumerate(leaderboard[:10])])
+    edetabel = "\n".join([f"{i+1}. <@{uid}> - {saldo}€" for i, (uid, saldo) in enumerate(leaderboard)])
     await ctx.send(f"🏆 **Edetabel:**\n{edetabel}")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def laen(ctx, kasutaja: discord.Member, amount: int):
-    user_id = str(kasutaja.id)
-    loan = get_loan(user_id)
-    if loan["amount"] > 0:
-        await ctx.send(f"❌ {kasutaja.display_name} juba omab laenu: {loan['amount']}€.")
-        return
-
-    set_loan(user_id, amount, 0.1)
-    current_balance = get_balance(user_id)
-    set_balance(user_id, current_balance + amount)
-    await ctx.send(f"✅ {kasutaja.display_name} sai {amount}€ laenu (intressiga 10%).")
 
 @bot.command()
 async def laen_olek(ctx):
@@ -260,6 +196,20 @@ async def laen_olek(ctx):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
+async def laen(ctx, kasutaja: discord.Member, amount: int):
+    user_id = str(kasutaja.id)
+    loan = get_loan(user_id)
+    if loan["amount"] > 0:
+        await ctx.send(f"❌ {kasutaja.display_name} juba omab laenu: {loan['amount']}€.")
+        return
+
+    set_loan(user_id, amount, 0.1)
+    current_balance = get_balance(user_id)
+    set_balance(user_id, current_balance + amount)
+    await ctx.send(f"✅ {kasutaja.display_name} sai {amount}€ laenu (intressiga 10%).")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
 async def reset_saldo(ctx, kasutaja: discord.Member = None):
     if kasutaja is None:
         kasutaja = ctx.author
@@ -270,3 +220,4 @@ async def reset_saldo(ctx, kasutaja: discord.Member = None):
 from keep_alive import keep_alive
 keep_alive()
 bot.run(os.getenv("TOKEN"))
+
