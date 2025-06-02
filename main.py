@@ -5,49 +5,64 @@ from dotenv import load_dotenv
 load_dotenv()
 import random
 import mysql.connector
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
+from decimal import Decimal
+from keep_alive import keep_alive
 
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# MySQL andmebaasi ühendus
-db = mysql.connector.connect(
-    host="sql7.freesqldatabase.com", 
-    user="sql7782601", 
-    password="mP1wFwctMn", 
-    database="sql7782601"
-)
-cursor = db.cursor()
+# Funktsioon iga DB ühenduse jaoks
+def get_db_cursor():
+    db = mysql.connector.connect(
+        host="sql7.freesqldatabase.com",
+        user="sql7782601",
+        password="mP1wFwctMn",
+        database="sql7782601"
+    )
+    return db, db.cursor()
 
 # Andmebaasi abifunktsioonid
 def get_balance(user_id):
+    db, cursor = get_db_cursor()
     cursor.execute("SELECT balance FROM users WHERE user_id = %s", (user_id,))
     result = cursor.fetchone()
-    if result:
-        return result[0]
-    return 1000  # Algsaldo
+    cursor.close()
+    db.close()
+    return result[0] if result else 1000
 
 def set_balance(user_id, amount):
+    db, cursor = get_db_cursor()
     cursor.execute("INSERT INTO users (user_id, balance) VALUES (%s, %s) ON DUPLICATE KEY UPDATE balance = %s", (user_id, amount, amount))
     db.commit()
+    cursor.close()
+    db.close()
 
 def get_loan(user_id):
+    db, cursor = get_db_cursor()
     cursor.execute("SELECT amount, interest FROM loans WHERE user_id = %s", (user_id,))
     result = cursor.fetchone()
-    if result:
-        return {"amount": result[0], "interest": result[1]}
-    return {"amount": 0, "interest": 0}
+    cursor.close()
+    db.close()
+    return {"amount": result[0], "interest": result[1]} if result else {"amount": 0, "interest": 0}
 
 def set_loan(user_id, amount, interest):
+    db, cursor = get_db_cursor()
     cursor.execute("INSERT INTO loans (user_id, amount, interest) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE amount = %s, interest = %s", (user_id, amount, interest, amount, interest))
     db.commit()
+    cursor.close()
+    db.close()
 
 def get_leaderboard():
+    db, cursor = get_db_cursor()
     cursor.execute("SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT 10")
-    return cursor.fetchall()
+    result = cursor.fetchall()
+    cursor.close()
+    db.close()
+    return result
 
 # Blackjacki abifunktsioonid
 def get_value(cards):
@@ -219,9 +234,6 @@ async def reset_saldo(ctx, kasutaja: discord.Member = None):
     set_balance(user_id, 0)
     await ctx.send(f"🔁 {kasutaja.display_name} saldo on nullitud (0€).")
 
-
-from decimal import Decimal
-
 @bot.command()
 async def maksa_tagasi(ctx, summa: float):
     user_id = str(ctx.author.id)
@@ -232,7 +244,6 @@ async def maksa_tagasi(ctx, summa: float):
         await ctx.send("❌ Sul ei ole aktiivset laenu.")
         return
 
-    # Teisenda summa Decimal-iks
     summa = Decimal(str(summa))
 
     if summa > saldo:
@@ -248,18 +259,16 @@ async def maksa_tagasi(ctx, summa: float):
     set_balance(user_id, uus_saldo)
     set_loan(user_id, uus_laen, laen["interest"])
 
+    db, cursor = get_db_cursor()
     cursor.execute(
         "INSERT INTO loan_repayments (user_id, amount_paid, repayment_date) VALUES (%s, %s, NOW())",
         (user_id, summa)
     )
     db.commit()
+    cursor.close()
+    db.close()
 
     await ctx.send(f"💸 Maksid tagasi {summa}€ laenu. Allesjäänud laen: {uus_laen}€")
 
-
-
-
-from keep_alive import keep_alive
 keep_alive()
 bot.run(os.getenv("TOKEN"))
-
