@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
+from dotenv import load_dotenv
+load_dotenv()
 import random
 import mysql.connector
 from datetime import datetime, timedelta
