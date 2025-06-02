@@ -15,7 +15,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 db = mysql.connector.connect(
     host="sql7.freesqldatabase.com", 
     user="sql7782601", 
-    password="your_password", 
+    password="mP1wFwctMn", 
     database="sql7782601"
 )
 cursor = db.cursor()
