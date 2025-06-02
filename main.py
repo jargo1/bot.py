@@ -219,6 +219,36 @@ async def reset_saldo(ctx, kasutaja: discord.Member = None):
     set_balance(user_id, 0)
     await ctx.send(f"🔁 {kasutaja.display_name} saldo on nullitud (0€).")
 
+
+@bot.command()
+async def maksa_tagasi(ctx, summa: int):
+    user_id = str(ctx.author.id)
+    loan = get_loan(user_id)
+
+    if loan["amount"] == 0:
+        await ctx.send("❌ Sul pole laenu.")
+        return
+
+    remaining_amount = loan["amount"] - loan["amount_paid"]
+
+    if summa > remaining_amount:
+        await ctx.send(f"❌ Sa ei saa rohkem maksta, kui on jäänud tasuda. Hetkel on tasumata {remaining_amount}€.")
+        return
+
+    new_amount_paid = loan["amount_paid"] + summa
+    new_amount = loan["amount"] - new_amount_paid
+
+    # Uuendame laenu summat ja tagasimakstud summat andmebaasis
+    cursor.execute(
+        "UPDATE loans SET amount_paid = %s, amount = %s WHERE user_id = %s",
+        (new_amount_paid, new_amount, user_id)
+    )
+    db.commit()
+
+    await ctx.send(f"✅ Tagasimakse {summa}€ on edukalt tehtud. Tasumata summa: {new_amount}€")
+
+
+
 from keep_alive import keep_alive
 keep_alive()
 bot.run(os.getenv("TOKEN"))
