@@ -221,31 +221,37 @@ async def reset_saldo(ctx, kasutaja: discord.Member = None):
 
 
 @bot.command()
-async def maksa_tagasi(ctx, summa: int):
+async def maksa_tagasi(ctx, summa: float):
     user_id = str(ctx.author.id)
-    loan = get_loan(user_id)
+    saldo = get_balance(user_id)
+    laen = get_loan(user_id)
 
-    if loan["amount"] == 0:
-        await ctx.send("❌ Sul pole laenu.")
+    if laen["amount"] == 0:
+        await ctx.send("❌ Sul ei ole aktiivset laenu.")
         return
 
-    remaining_amount = loan["amount"] - loan["amount_paid"]
-
-    if summa > remaining_amount:
-        await ctx.send(f"❌ Sa ei saa rohkem maksta, kui on jäänud tasuda. Hetkel on tasumata {remaining_amount}€.")
+    if summa > saldo:
+        await ctx.send(f"❌ Sul ei ole piisavalt raha. Sinu jääk: {saldo}€")
         return
 
-    new_amount_paid = loan["amount_paid"] + summa
-    new_amount = loan["amount"] - new_amount_paid
+    if summa > laen["amount"]:
+        summa = laen["amount"]  # ei saa rohkem maksta kui on võlgu
 
-    # Uuendame laenu summat ja tagasimakstud summat andmebaasis
+    uus_saldo = saldo - summa
+    uus_laen = laen["amount"] - summa
+
+    set_balance(user_id, uus_saldo)
+    set_loan(user_id, uus_laen, laen["interest"])
+
+    # Salvesta makse repayment-tabelisse
     cursor.execute(
-        "UPDATE loans SET amount_paid = %s, amount = %s WHERE user_id = %s",
-        (new_amount_paid, new_amount, user_id)
+        "INSERT INTO loan_repayments (user_id, amount_paid, repayment_date) VALUES (%s, %s, NOW())",
+        (user_id, summa)
     )
     db.commit()
 
-    await ctx.send(f"✅ Tagasimakse {summa}€ on edukalt tehtud. Tasumata summa: {new_amount}€")
+    await ctx.send(f"💸 Maksid tagasi {summa}€ laenu. Allesjäänud laen: {uus_laen}€")
+
 
 
 
