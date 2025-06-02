@@ -1,4 +1,6 @@
 discord.py
 flask
+mysql-connector-python
+
 
 
